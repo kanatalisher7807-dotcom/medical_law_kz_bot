@@ -1,0 +1,10 @@
+services:
+  - type: worker
+    name: medical-law-kz-bot
+    env: docker
+    plan: starter
+    region: virginia
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: TELEGRAM_TOKEN
+        sync: false
