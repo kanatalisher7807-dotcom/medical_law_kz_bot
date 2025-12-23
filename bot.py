@@ -230,7 +230,7 @@ async def handle_text(message: types.Message):
             "Не нашёл точного ответа в базе знаний.\n"
             "Попробуйте переформулировать вопрос проще (1–2 ключевых слова) "
             "или нажмите «✉️ Задать вопрос преподавателю».",
-            reply_markup=menu,
+            reply_markup=menu
         )
 
 if __name__ == "__main__":
