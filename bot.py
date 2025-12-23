@@ -114,6 +114,38 @@ async def mini_tests(message: types.Message):
         "Пока можете написать вопрос текстом — я отвечу по базе знаний.",
         reply_markup=menu,
     )
+# Контентные кнопки из меню (строго по SECTIONS)
+FAQ_BUTTONS = {
+    "⚖️ Медицинские ошибки",
+    "🚨 Инциденты",
+    "🏥 Жалобы пациента",
+    "✍️ Информированное согласие",
+    "🔒 Врачебная тайна",
+    "👮 Ответственность медработников",
+}
+
+@dp.message_handler(lambda m: m.text in FAQ_BUTTONS)
+async def handle_faq_buttons(message: types.Message):
+    entry = find_answer(message.text)
+
+    if entry:
+        answer = (entry.get("answer") or entry.get("a") or "").strip()
+
+        # если есть блок нормативки
+        law = entry.get("law") or entry.get("norms") or ""
+        if law:
+            answer += f"\n\n📚 Нормативная база:\n{law}"
+
+        # единый дисклеймер — ТОЛЬКО из кода
+        answer += f"\n\n{DISCLAIMER}"
+
+        await message.answer(answer, reply_markup=menu)
+    else:
+        await message.answer(
+            "Не нашёл точного ответа в базе знаний.\n"
+            "Попробуйте написать 1–2 ключевых слова или нажмите «✉️ Задать вопрос преподавателю».",
+            reply_markup=menu
+        )
 
 @dp.message_handler()
 async def handle_text(message: types.Message):
