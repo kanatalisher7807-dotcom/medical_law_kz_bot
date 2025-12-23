@@ -213,9 +213,6 @@ async def handle_section_buttons(message: types.Message):
         "Вы можете задать уточняющий вопрос текстом.",
         reply_markup=menu
     )
-
-        )
-
 @dp.message_handler()
 async def handle_text(message: types.Message):
     user_text = (message.text or "").strip()
