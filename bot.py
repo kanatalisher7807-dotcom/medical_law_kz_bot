@@ -121,7 +121,7 @@ async def handle_text(message: types.Message):
 
     entry = find_answer(user_text)
     if entry:
-        answer = entry.get("a", "")
+        answer = (entry.get("answer") or entry.get("a") or "").strip()
         law = entry.get("law")
         if law:
             answer += f"\n\n🔹 Нормативная база: {law}"
