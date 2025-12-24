@@ -160,7 +160,10 @@ async def handle_section_buttons(message: types.Message):
     key = (message.text or "").strip()
     query = SECTION_TO_QUERY.get(key, "")
 
-    entry = find_answer(query)
+   entry = next(
+    (e for e in FAQ if e.get("section") == key),
+    None
+)
     if entry:
         answer = (entry.get("answer") or entry.get("a") or "").strip()
         law = entry.get("law")
