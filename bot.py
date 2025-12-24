@@ -146,39 +146,31 @@ async def ask_teacher(message: types.Message):
         reply_markup=menu,
     )
 
-@dp.message_handler(lambda m: (m.text or "").strip() == "🧪 Мини-тесты")
-async def mini_tests(message: types.Message):
-    await message.answer(
-        "Мини-тесты подключим на следующем шаге.\n"
-        "Пока можете написать вопрос текстом — я отвечу по базе знаний.",
-        reply_markup=menu
-    )
-
 # Кнопки-разделы (кроме Нормативной базы / Вопрос преподавателю / Мини-тестов)
 @dp.message_handler(lambda m: (m.text or "").strip() in SECTION_TO_QUERY)
 async def handle_section_buttons(message: types.Message):
     key = (message.text or "").strip()
-    query = SECTION_TO_QUERY.get(key, "")
 
-   entry = next
-    (e for e in FAQ if e.get("section") == key),
-    None
- if entry:
+    # Ищем запись по полю section (прямое совпадение с названием кнопки)
+    entry = next((e for e in FAQ if e.get("section") == key), None)
+
+    if entry:
         answer = (entry.get("answer") or entry.get("a") or "").strip()
         law = entry.get("law")
 
         if law:
             answer += f"\n\n🔷 Нормативная база: {law}"
 
-        answer += f"\n\n{DISCLAIMER}"
+        answer += f"\n\n{DISCLAIMER}"  # дисклеймер один раз
         await message.answer(answer, reply_markup=menu)
         return
 
     await message.answer(
         "Информация по этому разделу пока не найдена в базе.\n"
         "Попробуйте задать вопрос текстом (1–2 ключевых слова).",
-        reply_markup=menu
+        reply_markup=menu,
     )
+
 
 # Любой текст (кроме команд и кроме нажатий кнопок меню)
 @dp.message_handler(lambda m: m.text and (not (m.text or "").startswith("/")) and ((m.text or "").strip() not in SECTIONS))
