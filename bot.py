@@ -9,8 +9,14 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 logging.basicConfig(level=logging.INFO)
 
+# ====== ENV ======
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+if not TOKEN:
+    raise RuntimeError("TELEGRAM_TOKEN is not set.")
+
+# Путь к faq.json — всегда рядом с bot.py (на Render/Docker это важно)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FAQ_PATH = os.path.join(BASE_DIR, "faq.json")
+FAQ_PATH = os.getenv("FAQ_PATH", os.path.join(BASE_DIR, "faq.json"))
 
 DISCLAIMER = (
     "⚠️ Ответ носит информационный характер и не является официальным юридическим заключением. "
@@ -18,7 +24,6 @@ DISCLAIMER = (
 )
 
 SECTIONS = [
-
     "⚖️ Медицинские ошибки",
     "🚨 Инциденты",
     "🏥 Жалобы пациента",
@@ -30,6 +35,7 @@ SECTIONS = [
     "🧪 Мини-тесты",
 ]
 
+# Что именно “подставлять” в поиск по FAQ при нажатии кнопки
 SECTION_TO_QUERY = {
     "⚖️ Медицинские ошибки": "медицинская ошибка",
     "🚨 Инциденты": "инцидент",
@@ -38,6 +44,8 @@ SECTION_TO_QUERY = {
     "🔒 Врачебная тайна": "врачебная тайна",
     "👮 Ответственность медработников": "ответственность",
 }
+
+# ====== MENU ======
 menu = ReplyKeyboardMarkup(resize_keyboard=True)
 menu.add(KeyboardButton(SECTIONS[0]), KeyboardButton(SECTIONS[1]))
 menu.add(KeyboardButton(SECTIONS[2]), KeyboardButton(SECTIONS[3]))
@@ -45,21 +53,32 @@ menu.add(KeyboardButton(SECTIONS[4]), KeyboardButton(SECTIONS[5]))
 menu.add(KeyboardButton(SECTIONS[6]))
 menu.add(KeyboardButton(SECTIONS[7]), KeyboardButton(SECTIONS[8]))
 
+# ====== FAQ ======
+FAQ: List[Dict[str, Any]] = []
+
 def load_faq() -> List[Dict[str, Any]]:
     try:
         with open(FAQ_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
         if not isinstance(data, list):
+            logging.error("faq.json is not a list. Got: %s", type(data))
             return []
         return data
     except Exception as e:
-        logging.exception("Failed to load FAQ: %s", e)
+        logging.exception("Failed to load FAQ from %s: %s", FAQ_PATH, e)
         return []
 
-FAQ = load_faq()
+def reload_faq() -> int:
+    global FAQ
+    FAQ = load_faq()
+    logging.info("FAQ loaded: %d entries (path=%s)", len(FAQ), FAQ_PATH)
+    return len(FAQ)
 
 def find_answer(user_text: str) -> Optional[Dict[str, Any]]:
-    text = (user_text or "").lower()
+    text = (user_text or "").lower().strip()
+    if not text:
+        return None
+
     best = None
     best_score = 0
 
@@ -75,9 +94,10 @@ def find_answer(user_text: str) -> Optional[Dict[str, Any]]:
 
     return best if best_score > 0 else None
 
-if not TOKEN:
-    raise RuntimeError("TELEGRAM_TOKEN is not set.")
+# Загружаем при старте
+reload_faq()
 
+# ====== BOT ======
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
 
@@ -95,7 +115,17 @@ async def start(message: types.Message):
 async def help_cmd(message: types.Message):
     await message.answer("Выберите раздел кнопками или напишите вопрос текстом.", reply_markup=menu)
 
-@dp.message_handler(lambda m: m.text == "📄 Нормативная база")
+# Тех-команды для проверки
+@dp.message_handler(commands=["faqcount"])
+async def faqcount(message: types.Message):
+    await message.answer(f"FAQ записей: {len(FAQ)}", reply_markup=menu)
+
+@dp.message_handler(commands=["reload"])
+async def reload_cmd(message: types.Message):
+    n = reload_faq()
+    await message.answer(f"Перезагрузил FAQ: {n} записей.", reply_markup=menu)
+
+@dp.message_handler(lambda m: (m.text or "").strip() == "📄 Нормативная база")
 async def law_base(message: types.Message):
     text = (
         "📄 Нормативная база (ориентиры):\n"
@@ -106,7 +136,7 @@ async def law_base(message: types.Message):
     )
     await message.answer(text, reply_markup=menu)
 
-@dp.message_handler(lambda m: m.text == "✉️ Задать вопрос преподавателю")
+@dp.message_handler(lambda m: (m.text or "").strip() == "✉️ Задать вопрос преподавателю")
 async def ask_teacher(message: types.Message):
     await message.answer(
         "Напишите ваш вопрос одним сообщением.\n"
@@ -116,12 +146,21 @@ async def ask_teacher(message: types.Message):
         reply_markup=menu,
     )
 
+@dp.message_handler(lambda m: (m.text or "").strip() == "🧪 Мини-тесты")
+async def mini_tests(message: types.Message):
+    await message.answer(
+        "Мини-тесты подключим на следующем шаге.\n"
+        "Пока можете написать вопрос текстом — я отвечу по базе знаний.",
+        reply_markup=menu
+    )
+
+# Кнопки-разделы (кроме Нормативной базы / Вопрос преподавателю / Мини-тестов)
 @dp.message_handler(lambda m: (m.text or "").strip() in SECTION_TO_QUERY)
 async def handle_section_buttons(message: types.Message):
     key = (message.text or "").strip()
     query = SECTION_TO_QUERY.get(key, "")
-    ...
 
+    entry = find_answer(query)
     if entry:
         answer = (entry.get("answer") or entry.get("a") or "").strip()
         law = entry.get("law")
@@ -129,19 +168,18 @@ async def handle_section_buttons(message: types.Message):
         if law:
             answer += f"\n\n🔷 Нормативная база: {law}"
 
-        # Дисклеймер — только тут, один раз
         answer += f"\n\n{DISCLAIMER}"
-
         await message.answer(answer, reply_markup=menu)
         return
 
     await message.answer(
-        "Информация по этому разделу пока готовится.\n"
+        "Информация по этому разделу пока не найдена в базе.\n"
         "Попробуйте задать вопрос текстом (1–2 ключевых слова).",
         reply_markup=menu
     )
 
-@dp.message_handler(lambda m: m.text and (m.text not in SECTIONS) and (not m.text.startswith("/")))
+# Любой текст (кроме команд и кроме нажатий кнопок меню)
+@dp.message_handler(lambda m: m.text and (not (m.text or "").startswith("/")) and ((m.text or "").strip() not in SECTIONS))
 async def handle_text(message: types.Message):
     user_text = (message.text or "").strip()
     entry = find_answer(user_text)
@@ -163,7 +201,6 @@ async def handle_text(message: types.Message):
         "или нажмите «✉️ Задать вопрос преподавателю».",
         reply_markup=menu
     )
-
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
