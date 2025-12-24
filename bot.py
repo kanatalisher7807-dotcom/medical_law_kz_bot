@@ -12,7 +12,60 @@ logging.basicConfig(level=logging.INFO)
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FAQ_PATH = os.getenv("FAQ_PATH") or os.path.join(BASE_DIR, "faq.json")
+
+def resolve_faq_path() -> str:
+    # 1) если ты задал FAQ_PATH в Render env — используем его
+    env_path = os.getenv("FAQ_PATH")
+    if env_path and os.path.exists(env_path):
+        return env_path
+
+    # 2) рядом с bot.py
+    p1 = os.path.join(BASE_DIR, "faq.json")
+    if os.path.exists(p1):
+        return p1
+
+    # 3) в корне рабочего каталога (/app)
+    p2 = os.path.join(os.getcwd(), "faq.json")
+    if os.path.exists(p2):
+        return p2
+
+    # 4) если проект в подпапке medical_law_kz_bot
+    p3 = os.path.join(os.getcwd(), "medical_law_kz_bot", "faq.json")
+    if os.path.exists(p3):
+        return p3
+
+    # если не нашли — вернём самый вероятный (рядом с bot.py)
+    return p1
+
+
+FAQ_PATH = resolve_faq_path()
+
+def load_faq() -> List[Dict[str, Any]]:
+    try:
+        logging.info(f"Loading FAQ from: {FAQ_PATH}")
+        logging.info(f"FAQ exists: {os.path.exists(FAQ_PATH)}")
+
+        with open(FAQ_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        if not isinstance(data, list):
+            logging.warning("FAQ is not a list. Using empty FAQ.")
+            return []
+
+        logging.info(f"FAQ loaded: {len(data)} entries")
+        return data
+
+    except Exception as e:
+        logging.exception("Failed to load FAQ: %s", e)
+        # покажем что реально лежит в папках (это прям спасает)
+        try:
+            logging.info(f"cwd={os.getcwd()}")
+            logging.info(f"listdir(cwd)={os.listdir(os.getcwd())}")
+            logging.info(f"listdir(BASE_DIR)={os.listdir(BASE_DIR)}")
+        except Exception:
+            pass
+        return []
+
 
 DISCLAIMER = (
     "⚠️ Ответ носит информационный характер и не является официальным юридическим заключением. "
