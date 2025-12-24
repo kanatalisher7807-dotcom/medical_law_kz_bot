@@ -9,8 +9,8 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 logging.basicConfig(level=logging.INFO)
 
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-FAQ_PATH = os.getenv("FAQ_PATH", "faq.json")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FAQ_PATH = os.path.join(BASE_DIR, "faq.json")
 
 DISCLAIMER = (
     "⚠️ Ответ носит информационный характер и не является официальным юридическим заключением. "
