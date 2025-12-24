@@ -198,15 +198,17 @@ async def mini_tests(message: types.Message):
     )
 
 
-# Кнопки-разделы (ищем по faq.json через query)
-@dp.message_handler(lambda m: (m.text or "").strip() in SECTION_TO_QUERY)
+@dp.message_handler(lambda m: (m.text or "").strip() in SECTIONS)
 async def handle_section_buttons(message: types.Message):
     key = (message.text or "").strip()
-    query = SECTION_TO_QUERY.get(key, "")
-    entry = find_answer(query)
+
+    entry = next(
+        (e for e in FAQ if e.get("section") == key),
+        None
+    )
 
     if entry:
-        answer = (entry.get("answer") or entry.get("a") or "").strip()
+        answer = (entry.get("answer") or "").strip()
         law = entry.get("law")
 
         if law:
@@ -217,9 +219,9 @@ async def handle_section_buttons(message: types.Message):
         return
 
     await message.answer(
-        "Информация по этому разделу пока не найдена в базе.\n"
+        "Информация по этому разделу пока готовится.\n"
         "Попробуйте задать вопрос текстом (1–2 ключевых слова).",
-        reply_markup=menu,
+        reply_markup=menu
     )
 
 
