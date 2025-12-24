@@ -36,7 +36,7 @@ SECTION_TO_QUERY = {
     "🏥 Жалобы пациента": "жалоба",
     "✍️ Информированное согласие": "информированное согласие",
     "🔒 Врачебная тайна": "врачебная тайна",
-    "👮 Ответственность медработников": "ответственность медработников",
+    "👮 Ответственность медработников": "ответственность",
 }
 menu = ReplyKeyboardMarkup(resize_keyboard=True)
 menu.add(KeyboardButton(SECTIONS[0]), KeyboardButton(SECTIONS[1]))
@@ -116,10 +116,11 @@ async def ask_teacher(message: types.Message):
         reply_markup=menu,
     )
 
-@dp.message_handler(lambda m: m.text in SECTION_TO_QUERY)
+@dp.message_handler(lambda m: (m.text or "").strip() in SECTION_TO_QUERY)
 async def handle_section_buttons(message: types.Message):
-    query = SECTION_TO_QUERY.get(message.text, "")
-    entry = find_answer(query)
+    key = (message.text or "").strip()
+    query = SECTION_TO_QUERY.get(key, "")
+    ...
 
     if entry:
         answer = (entry.get("answer") or entry.get("a") or "").strip()
