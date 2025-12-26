@@ -39,6 +39,27 @@ def resolve_faq_path() -> str:
 
 
 FAQ_PATH = resolve_faq_path()
+def resolve_exam_path() -> str:
+    env_path = os.getenv("EXAM_PATH")
+    if env_path and os.path.exists(env_path):
+        return env_path
+
+    p1 = os.path.join(BASE_DIR, "exam.json")
+    if os.path.exists(p1):
+        return p1
+
+    p2 = os.path.join(os.getcwd(), "exam.json")
+    if os.path.exists(p2):
+        return p2
+
+    p3 = os.path.join(os.getcwd(), "medical_law_kz_bot", "exam.json")
+    if os.path.exists(p3):
+        return p3
+
+    return p1
+
+
+EXAM_PATH = resolve_exam_path()
 
 def load_faq() -> List[Dict[str, Any]]:
     try:
@@ -83,6 +104,7 @@ SECTIONS = [
     "✉️ Задать вопрос преподавателю",
     "🧪 Мини-тесты",
 ]
+USER_MODE: Dict[int, str] = {}
 
 # что искать в faq.json при нажатии кнопки
 SECTION_TO_QUERY = {
@@ -119,6 +141,27 @@ def load_faq() -> List[Dict[str, Any]]:
 
 
 FAQ = load_faq()
+def load_exam() -> List[Dict[str, Any]]:
+    try:
+        logging.info(f"Loading EXAM from: {EXAM_PATH}")
+        logging.info(f"EXAM exists: {os.path.exists(EXAM_PATH)}")
+
+        with open(EXAM_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        if not isinstance(data, list):
+            logging.warning("EXAM is not a list. Using empty EXAM.")
+            return []
+
+        logging.info(f"EXAM loaded: {len(data)} entries")
+        return data
+
+    except Exception as e:
+        logging.exception("Failed to load EXAM: %s", e)
+        return []
+
+
+EXAM = load_exam()
 
 
 def find_answer(user_text: str) -> Optional[Dict[str, Any]]:
@@ -188,14 +231,19 @@ async def ask_teacher(message: types.Message):
     )
 
 
-# Хардкод: Мини-тесты (пока заглушка)
 @dp.message_handler(lambda m: (m.text or "").strip() == "🧪 Мини-тесты")
 async def mini_tests(message: types.Message):
+    USER_MODE[message.from_user.id] = "exam"
     await message.answer(
-        "🧪 Мини-тесты подключим на следующем шаге.\n"
-        "Пока можете написать вопрос текстом — я отвечу по базе знаний.",
+        "🧪 Экзаменационный режим включён.\n\n"
+        "Напишите тему или ключевые слова, например:\n"
+        "• ответственность\n"
+        "• ответственность медработников\n"
+        "• дисциплинарная ответственность\n\n"
+        "Чтобы выйти из режима — напишите: выход",
         reply_markup=menu,
     )
+
 
 
 @dp.message_handler(lambda m: (m.text or "").strip() in SECTIONS)
@@ -224,12 +272,70 @@ async def handle_section_buttons(message: types.Message):
         reply_markup=menu
     )
 
+@dp.message_handler(lambda m: m.text and (not m.text.startswith("/")) and ((m.text or "").strip() not in SECTIONS))
+async def handle_exam_mode(message: types.Message):
+    uid = message.from_user.id
+    user_text = (message.text or "").strip()
+
+    # если не в экзамен-режиме — пропускаем, пусть обработает FAQ
+    if USER_MODE.get(uid) != "exam":
+        return
+
+    # выход из режима
+    if user_text.lower() in ("выход", "выйти", "exit"):
+        USER_MODE.pop(uid, None)
+        await message.answer("Экзаменационный режим выключён. Можете задавать обычные вопросы.", reply_markup=menu)
+        return
+
+    entry = find_exam_card(user_text)
+    if not entry:
+        await message.answer(
+            "По этому запросу экзаменационная карточка не найдена.\n"
+            "Попробуйте проще: «ответственность», «дисциплинарная», «уголовная».",
+            reply_markup=menu,
+        )
+        return
+
+    q = (entry.get("question") or "").strip()
+    ideal = (entry.get("ideal_answer") or "").strip()
+    comment = (entry.get("comment") or "").strip()
+    mistake = (entry.get("common_mistake") or "").strip()
+    law = (entry.get("law") or "").strip()
+
+    out = f"🎓 Экзаменационная карточка\n\n📌 Вопрос:\n{q}\n\n✅ Эталонный ответ:\n{ideal}"
+
+    if comment:
+        out += f"\n\n💡 Комментарий:\n{comment}"
+    if mistake:
+        out += f"\n\n⚠️ Типичная ошибка:\n{mistake}"
+    if law:
+        out += f"\n\n🔷 Нормативная база:\n{law}"
+
+    out += f"\n\n{DISCLAIMER}"
+
+    await message.answer(out, reply_markup=menu)
 
 # Текстовые вопросы (всё, что не команда и не кнопка меню)
 @dp.message_handler(lambda m: m.text and (not m.text.startswith("/")) and ((m.text or "").strip() not in SECTIONS))
 async def handle_text(message: types.Message):
     user_text = (message.text or "").strip()
     entry = find_answer(user_text)
+def find_exam_card(user_text: str) -> Optional[Dict[str, Any]]:
+    text = (user_text or "").lower()
+    best = None
+    best_score = 0
+
+    for entry in EXAM:
+        keywords = entry.get("keywords") or []
+        score = 0
+        for kw in keywords:
+            if isinstance(kw, str) and kw.lower() in text:
+                score += 1
+        if score > best_score:
+            best_score = score
+            best = entry
+
+    return best if best_score > 0 else None
 
     if entry:
         answer = (entry.get("answer") or entry.get("a") or "").strip()
