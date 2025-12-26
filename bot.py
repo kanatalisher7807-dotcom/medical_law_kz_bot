@@ -320,22 +320,6 @@ async def handle_exam_mode(message: types.Message):
 async def handle_text(message: types.Message):
     user_text = (message.text or "").strip()
     entry = find_answer(user_text)
-def find_exam_card(user_text: str) -> Optional[Dict[str, Any]]:
-    text = (user_text or "").lower()
-    best = None
-    best_score = 0
-
-    for entry in EXAM:
-        keywords = entry.get("keywords") or []
-        score = 0
-        for kw in keywords:
-            if isinstance(kw, str) and kw.lower() in text:
-                score += 1
-        if score > best_score:
-            best_score = score
-            best = entry
-
-    return best if best_score > 0 else None
 
     if entry:
         answer = (entry.get("answer") or entry.get("a") or "").strip()
