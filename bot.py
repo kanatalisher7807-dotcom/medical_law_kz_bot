@@ -219,7 +219,10 @@ async def mini_tests(message: types.Message):
 async def handle_section_buttons(message: types.Message):
     key = (message.text or "").strip()
 
-    entry = next((e for e in FAQ if e.get("section") == key), None)
+   entry = next(
+        (e for e in FAQ if e.get("section") == key and e.get("type") == "intro"),
+        None
+    )
 
     if entry:
         answer = (entry.get("answer") or "").strip()
