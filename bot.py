@@ -214,23 +214,22 @@ async def mini_tests(message: types.Message):
     )
 
 
-# Кнопки-разделы: выдаём ОДНУ карточку по разделу (первую найденную)
 @dp.message_handler(lambda m: (m.text or "").strip() in SECTIONS)
 async def handle_section_buttons(message: types.Message):
     key = (message.text or "").strip()
 
-   entry = next(
-        (e for e in FAQ if 
-e.get("section") == key and e.get("type") 
-== "intro"),
+    entry = next(
+        (e for e in FAQ if e.get("section") == key and e.get("type") == "intro"),
         None
     )
 
     if entry:
         answer = (entry.get("answer") or "").strip()
         law = entry.get("law")
+
         if law:
             answer += f"\n\n🔷 Нормативная база: {law}"
+
         answer += f"\n\n{DISCLAIMER}"
         await message.answer(answer, reply_markup=menu)
         return
@@ -238,8 +237,9 @@ e.get("section") == key and e.get("type")
     await message.answer(
         "Информация по этому разделу пока готовится.\n"
         "Попробуйте задать вопрос текстом (1–2 ключевых слова).",
-        reply_markup=menu,
+        reply_markup=menu
     )
+
 
 
 # EXAM-режим: ловим ТОЛЬКО когда USER_MODE == "exam"
