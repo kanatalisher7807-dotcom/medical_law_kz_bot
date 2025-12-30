@@ -134,6 +134,16 @@ def find_answer(user_text: str) -> Optional[Dict[str, Any]]:
 
     return best if best_score > 0 else None
 
+def norm(text: str) -> str:
+    t = (text or "").lower()
+    t = t.replace("ё", "е")
+    t = re.sub(r"[^a-zа-я0-9\s-]+", " ", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
+
+def similar(a: str, b: str) -> float:
+    return SequenceMatcher(None, a, b).ratio()
+
 
 def find_exam_card(user_text: str) -> Optional[Dict[str, Any]]:
     text = (user_text or "").lower()
