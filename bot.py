@@ -1,9 +1,9 @@
-import re
-from difflib import SequenceMatcher
 import os
 import json
+import re
 import logging
-from typing import Optional, Dict, Any, List
+from difflib import SequenceMatcher
+from typing import Optional, Dict, Any, List, Tuple
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.utils import executor
@@ -31,54 +31,7 @@ SECTIONS = [
     "🧪 Мини-тесты",
 ]
 
-# режим пользователя: обычный / exam
-USER_MODE: Dict[int, str] = {}
-
-
-def resolve_faq_path() -> str:
-    env_path = os.getenv("FAQ_PATH")
-    if env_path and os.path.exists(env_path):
-        return env_path
-
-    p1 = os.path.join(BASE_DIR, "faq.json")
-    if os.path.exists(p1):
-        return p1
-
-    p2 = os.path.join(os.getcwd(), "faq.json")
-    if os.path.exists(p2):
-        return p2
-
-    p3 = os.path.join(os.getcwd(), "medical_law_kz_bot", "faq.json")
-    if os.path.exists(p3):
-        return p3
-
-    return p1
-
-
-def resolve_exam_path() -> str:
-    env_path = os.getenv("EXAM_PATH")
-    if env_path and os.path.exists(env_path):
-        return env_path
-
-    p1 = os.path.join(BASE_DIR, "exam.json")
-    if os.path.exists(p1):
-        return p1
-
-    p2 = os.path.join(os.getcwd(), "exam.json")
-    if os.path.exists(p2):
-        return p2
-
-    p3 = os.path.join(os.getcwd(), "medical_law_kz_bot", "exam.json")
-    if os.path.exists(p3):
-        return p3
-
-    return p1
-
-
-FAQ_PATH = resolve_faq_path()
-EXAM_PATH = resolve_exam_path()
-
-# Клавиатура
+# Клавиатура (меню)
 menu = ReplyKeyboardMarkup(resize_keyboard=True)
 menu.add(KeyboardButton(SECTIONS[0]), KeyboardButton(SECTIONS[1]))
 menu.add(KeyboardButton(SECTIONS[2]), KeyboardButton(SECTIONS[3]))
@@ -86,30 +39,47 @@ menu.add(KeyboardButton(SECTIONS[4]), KeyboardButton(SECTIONS[5]))
 menu.add(KeyboardButton(SECTIONS[6]))
 menu.add(KeyboardButton(SECTIONS[7]), KeyboardButton(SECTIONS[8]))
 
+# Режимы (если всё же хочешь оставлять "экзамен-режим" кнопкой)
+USER_MODE: Dict[int, str] = {}
+
+
+def resolve_path(env_var: str, filename: str) -> str:
+    env_path = os.getenv(env_var)
+    if env_path and os.path.exists(env_path):
+        return env_path
+
+    p1 = os.path.join(BASE_DIR, filename)
+    if os.path.exists(p1):
+        return p1
+
+    p2 = os.path.join(os.getcwd(), filename)
+    if os.path.exists(p2):
+        return p2
+
+    p3 = os.path.join(os.getcwd(), "medical_law_kz_bot", filename)
+    if os.path.exists(p3):
+        return p3
+
+    return p1
+
+
+FAQ_PATH = resolve_path("FAQ_PATH", "faq.json")
+EXAM_PATH = resolve_path("EXAM_PATH", "exam.json")
+
 
 def load_json_list(path: str, label: str) -> List[Dict[str, Any]]:
     try:
         logging.info(f"Loading {label} from: {path}")
         logging.info(f"{label} exists: {os.path.exists(path)}")
-
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-
         if not isinstance(data, list):
-            logging.warning(f"{label} is not a list. Using empty {label}.")
+            logging.warning(f"{label} is not a list. Using empty list.")
             return []
-
         logging.info(f"{label} loaded: {len(data)} entries")
         return data
-
     except Exception as e:
         logging.exception(f"Failed to load {label}: %s", e)
-        try:
-            logging.info(f"cwd={os.getcwd()}")
-            logging.info(f"listdir(cwd)={os.listdir(os.getcwd())}")
-            logging.info(f"listdir(BASE_DIR)={os.listdir(BASE_DIR)}")
-        except Exception:
-            pass
         return []
 
 
@@ -117,94 +87,143 @@ FAQ = load_json_list(FAQ_PATH, "FAQ")
 EXAM = load_json_list(EXAM_PATH, "EXAM")
 
 
-def find_answer(user_text: str) -> Optional[Dict[str, Any]]:
-    query = norm(user_text)
-    if not query:
-        return None
+# ---------------------------
+#  Шаг 1: нормализация + опечатки
+# ---------------------------
 
-    q_words = query.split()
-    is_one_word = (len(q_words) == 1)
+ALIASES = {
+    "жлба": "жалоба",
+    "жалоб": "жалоба",
+    "хамит": "грубость",
+    "хам": "грубость",
+    "врач хам": "грубость",
+    "диагн": "диагноз",
+    "диаг": "диагноз",
+    "конфл": "конфликт",
+    "конфликт с врачом": "конфликт",
+    "отказ": "отказали",
+    "не приняли": "отказали",
+    "не принял": "отказали",
+    "тайна": "врачебная тайна",
+    "согласие": "информированное согласие",
+    "ошибка": "медицинская ошибка",
+    "ответственность": "ответственность медработников",
+}
 
-    best = None
-    best_score = 0.0
-
-    for entry in FAQ:
-        if entry.get("type") != "card":
-            continue
-
-        keywords = entry.get("keywords") or []
-        title = norm(entry.get("title") or "")
-        section = norm(entry.get("section") or "")
-        answer = entry.get("answer") or ""
-
-        score = 0.0
-
-        # 1) точные вхождения по keywords
-        for kw in keywords:
-            if not isinstance(kw, str):
-                continue
-            nkw = norm(kw)
-            if nkw and nkw in query:
-                score += 2.0
-
-        # 2) если запрос из 1 слова — подсказка по title/section
-        if is_one_word:
-            w = q_words[0]
-            if w in title:
-                score += 1.2
-            if w in section:
-                score += 0.8
-
-        # 3) fuzzy: если точного совпадения нет, пробуем похожесть
-        if score == 0.0:
-            for kw in keywords:
-                if not isinstance(kw, str):
-                    continue
-                nkw = norm(kw)
-                if not nkw:
-                    continue
-
-                # сравнение "слово vs keyword" и "вся фраза vs keyword"
-                if any(similar(w, nkw) >= 0.82 for w in q_words):
-                    score += 1.0
-                elif similar(query, nkw) >= 0.82:
-                    score += 1.0
-
-        if score > best_score:
-            best_score = score
-            best = entry
-
-    return best if best_score >= 1.0 else None
+STOP_WORDS = {"и", "в", "во", "на", "по", "за", "к", "ко", "о", "об", "от", "это", "что", "как", "ли"}
 
 
-def norm(text: str) -> str:
-    t = (text or "").lower()
-    t = t.replace("ё", "е")
-    t = re.sub(r"[^a-zа-я0-9\s-]+", " ", t)
-    t = re.sub(r"\s+", " ", t).strip()
-    return t
+def clean_text(s: str) -> str:
+    s = (s or "").strip().lower()
+    # убрать эмодзи/служебное: оставляем буквы/цифры/пробел
+    s = re.sub(r"[^0-9a-zа-яё\s-]+", " ", s, flags=re.IGNORECASE)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
 
-def similar(a: str, b: str) -> float:
+
+def normalize_query(s: str) -> str:
+    s = clean_text(s)
+    # алиасы по всей строке
+    if s in ALIASES:
+        s = ALIASES[s]
+    return s
+
+
+def tokens(s: str) -> List[str]:
+    s = normalize_query(s)
+    parts = [p for p in s.split() if p and p not in STOP_WORDS]
+    return parts
+
+
+def sim(a: str, b: str) -> float:
     return SequenceMatcher(None, a, b).ratio()
 
 
-def find_exam_card(user_text: str) -> Optional[Dict[str, Any]]:
-    text = (user_text or "").lower()
-    best = None
-    best_score = 0
+def best_match(entries: List[Dict[str, Any]], user_text: str, keyword_field: str = "keywords") -> Optional[Dict[str, Any]]:
+    """
+    Возвращает лучший entry по:
+    1) точным вхождениям kw в текст
+    2) fuzzy-совпадениям (опечатки/обрезки)
+    """
+    text = normalize_query(user_text)
+    tks = tokens(text)
 
-    for entry in EXAM:
-        keywords = entry.get("keywords") or []
-        score = 0
-        for kw in keywords:
-            if isinstance(kw, str) and kw.lower() in text:
-                score += 1
+    best: Optional[Dict[str, Any]] = None
+    best_score: float = 0.0
+
+    for e in entries:
+        kws = e.get(keyword_field) or []
+        if not isinstance(kws, list):
+            continue
+
+        score = 0.0
+
+        for kw in kws:
+            if not isinstance(kw, str):
+                continue
+            kw_n = normalize_query(kw)
+
+            # 1) точное вхождение фразы
+            if kw_n and kw_n in text:
+                score += 3.0
+                continue
+
+            # 2) fuzzy: сравниваем kw с каждым токеном пользователя
+            for tk in tks:
+                if not tk or not kw_n:
+                    continue
+
+                # короткие токены типа "диагн" — тоже ловим
+                r = sim(tk, kw_n)
+                if r >= 0.82:
+                    score += 1.6
+                elif len(tk) >= 4 and len(kw_n) >= 4 and (tk in kw_n or kw_n in tk):
+                    score += 1.1
+
+        # бонус, если entry в нужной секции (опционально)
         if score > best_score:
             best_score = score
-            best = entry
+            best = e
 
-    return best if best_score > 0 else None
+    # порог: чтобы не ловил мусор
+    return best if best_score >= 1.2 else None
 
+
+def format_faq_answer(entry: Dict[str, Any]) -> str:
+    answer = (entry.get("answer") or entry.get("a") or "").strip()
+    law = (entry.get("law") or "").strip()
+    if law:
+        answer += f"\n\n🔷 Нормативная база: {law}"
+    answer += f"\n\n{DISCLAIMER}"
+    return answer
+
+
+def format_exam_answer(entry: Dict[str, Any]) -> str:
+    q = (entry.get("question") or "").strip()
+    ideal = (entry.get("ideal_answer") or "").strip()
+    comment = (entry.get("comment") or "").strip()
+    mistake = (entry.get("common_mistake") or "").strip()
+    law = (entry.get("law") or "").strip()
+
+    out = "🎓 Экзаменационная карточка"
+    if q:
+        out += f"\n\n📌 Вопрос:\n{q}"
+    if ideal:
+        out += f"\n\n✅ Эталонный ответ:\n{ideal}"
+    if comment:
+        out += f"\n\n💡 Комментарий:\n{comment}"
+    if mistake:
+        out += f"\n\n⚠️ Типичная ошибка:\n{mistake}"
+    if law:
+        out += f"\n\n🔷 Нормативная база:\n{law}"
+
+    out += f"\n\n{DISCLAIMER}"
+    return out
+
+
+# ---------------------------
+#  Aiogram init
+# ---------------------------
 
 if not TOKEN:
     raise RuntimeError("TELEGRAM_TOKEN is not set.")
@@ -254,78 +273,52 @@ async def ask_teacher(message: types.Message):
     )
 
 
-# Мини-тесты: включаем exam-режим
+# Кнопка: Мини-тесты (оставим режим, но EXAM будет работать и без него)
 @dp.message_handler(lambda m: (m.text or "").strip() == "🧪 Мини-тесты")
 async def mini_tests(message: types.Message):
     USER_MODE[message.from_user.id] = "exam"
     await message.answer(
         "🧪 Экзаменационный режим включён.\n\n"
-        "Напишите тему или ключевые слова, например:\n"
-        "• ответственность\n"
-        "• дисциплинарная ответственность\n"
-        "• врачебная тайна\n\n"
-        "Чтобы выйти из режима — напишите: выход",
+        "Пишите тему/ключевые слова. Чтобы выйти — напишите: выход",
         reply_markup=menu,
     )
 
 
+# Кнопки разделов: показываем intro, если есть (type="intro")
 @dp.message_handler(lambda m: (m.text or "").strip() in SECTIONS)
 async def handle_section_buttons(message: types.Message):
     key = (message.text or "").strip()
 
-    entry = next(
-        (e for e in FAQ if e.get("section") == key and e.get("type") == "intro"),
-        None
-    )
-
-    if entry:
-        answer = (entry.get("answer") or "").strip()
-
-        # добавляем ведущую карточку (дефиницию), если есть
-        lead = next(
-            (e for e in FAQ
-             if e.get("section") == key and e.get("type") == "card" and e.get("role") == "lead"),
-            None
-        )
-
-        if lead:
-            answer += "\n\n" + lead.get("answer", "").strip()
-
-        law = entry.get("law")
-        if law:
-            answer += f"\n\n🔷 Нормативная база: {law}"
-
-        answer += f"\n\n{DISCLAIMER}"
-        await message.answer(answer, reply_markup=menu)
+    intro = next((e for e in FAQ if e.get("section") == key and e.get("type") == "intro"), None)
+    if intro:
+        await message.answer(format_faq_answer(intro), reply_markup=menu)
         return
 
+    # если intro нет — просто покажем базовую подсказку
     await message.answer(
-        "Информация по этому разделу пока готовится.\n"
-        "Попробуйте задать вопрос текстом (1–2 ключевых слова).",
-        reply_markup=menu
-    )
-
-    await message.answer(
-        "Информация по этому разделу пока готовится.\n"
-        "Попробуйте задать вопрос текстом (1–2 ключевых слова).",
+        "Раздел открыт. Напишите 1–2 ключевых слова по теме (например: «отказали», «жалоба», «врачебная тайна»).",
         reply_markup=menu
     )
 
 
-
-# EXAM-режим: ловим ТОЛЬКО когда USER_MODE == "exam"
-@dp.message_handler(lambda m: USER_MODE.get(m.from_user.id) == "exam" and m.text and (not (m.text or "").startswith("/")))
-async def handle_exam_mode(message: types.Message):
+# ЕДИНСТВЕННЫЙ обработчик текстовых сообщений (важно!)
+@dp.message_handler(lambda m: m.text and (not m.text.startswith("/")) and ((m.text or "").strip() not in SECTIONS))
+async def handle_text(message: types.Message):
     uid = message.from_user.id
-    user_text = (message.text or "").strip()
+    raw = (message.text or "").strip()
 
-    if user_text.lower() in ("выход", "выйти", "exit"):
+    # выход из экзамен-режима
+    if USER_MODE.get(uid) == "exam" and raw.lower() in ("выход", "выйти", "exit"):
         USER_MODE.pop(uid, None)
         await message.answer("Экзаменационный режим выключён. Можете задавать обычные вопросы.", reply_markup=menu)
         return
 
-    entry = find_exam_card(user_text)
-    if not entry:
+    # 1) если пользователь в exam-режиме — сначала EXAM
+    if USER_MODE.get(uid) == "exam":
+        exam_entry = best_match(EXAM, raw, keyword_field="keywords")
+        if exam_entry:
+            await message.answer(format_exam_answer(exam_entry), reply_markup=menu)
+            return
         await message.answer(
             "По этому запросу экзаменационная карточка не найдена.\n"
             "Попробуйте проще: «ответственность», «дисциплинарная», «уголовная».",
@@ -333,53 +326,25 @@ async def handle_exam_mode(message: types.Message):
         )
         return
 
-    q = (entry.get("question") or "").strip()
-    ideal = (entry.get("ideal_answer") or "").strip()
-    comment = (entry.get("comment") or "").strip()
-    mistake = (entry.get("common_mistake") or "").strip()
-    law = (entry.get("law") or "").strip()
-
-    out = f"🎓 Экзаменационная карточка\n\n📌 Вопрос:\n{q}\n\n✅ Эталонный ответ:\n{ideal}"
-    if comment:
-        out += f"\n\n💡 Комментарий:\n{comment}"
-    if mistake:
-        out += f"\n\n⚠️ Типичная ошибка:\n{mistake}"
-    if law:
-        out += f"\n\n🔷 Нормативная база:\n{law}"
-
-    out += f"\n\n{DISCLAIMER}"
-    await message.answer(out, reply_markup=menu)
-
-
-# Обычные текстовые вопросы (FAQ)
-@dp.message_handler(lambda m: m.text and (not (m.text or "").startswith("/")) and ((m.text or "").strip() not in SECTIONS))
-async def handle_text(message: types.Message):
-    user_text = (message.text or "").strip()
-    entry = find_answer(user_text)
-
-    if entry:
-        answer = (entry.get("answer") or entry.get("a") or "").strip()
-        law = entry.get("law")
-        if law:
-            answer += f"\n\n🔷 Нормативная база: {law}"
-        answer += f"\n\n{DISCLAIMER}"
-        await message.answer(answer, reply_markup=menu)
+    # 2) обычный режим: сначала FAQ (с fuzzy)
+    faq_entry = best_match(FAQ, raw, keyword_field="keywords")
+    if faq_entry:
+        await message.answer(format_faq_answer(faq_entry), reply_markup=menu)
         return
 
+    # 3) если в FAQ не нашли — пробуем EXAM автоматически (Шаг 2)
+    exam_entry = best_match(EXAM, raw, keyword_field="keywords")
+    if exam_entry:
+        await message.answer(format_exam_answer(exam_entry), reply_markup=menu)
+        return
+
+    # 4) совсем ничего
     await message.answer(
         "Не нашёл точного ответа в базе знаний.\n"
-        "Попробуйте переформулировать вопрос проще (1–2 ключевых слова) "
-        "или нажмите «✉️ Задать вопрос преподавателю».",
+        "Попробуйте проще (1–2 ключевых слова) или нажмите «✉️ Задать вопрос преподавателю».",
         reply_markup=menu,
     )
 
 
-@dp.errors_handler()
-async def global_error_handler(update, exception):
-    logging.exception("Update caused error: %s", exception)
-    return True
-
-
 if __name__ == "__main__":
-    logging.info("BOT STARTED OK")
     executor.start_polling(dp, skip_updates=True)
