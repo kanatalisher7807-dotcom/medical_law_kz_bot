@@ -118,21 +118,64 @@ EXAM = load_json_list(EXAM_PATH, "EXAM")
 
 
 def find_answer(user_text: str) -> Optional[Dict[str, Any]]:
-    text = (user_text or "").lower()
+    query = norm(user_text)
+    if not query:
+        return None
+
+    q_words = query.split()
+    is_one_word = (len(q_words) == 1)
+
     best = None
-    best_score = 0
+    best_score = 0.0
 
     for entry in FAQ:
+        if entry.get("type") != "card":
+            continue
+
         keywords = entry.get("keywords") or []
-        score = 0
+        title = norm(entry.get("title") or "")
+        section = norm(entry.get("section") or "")
+        answer = entry.get("answer") or ""
+
+        score = 0.0
+
+        # 1) точные вхождения по keywords
         for kw in keywords:
-            if isinstance(kw, str) and kw.lower() in text:
-                score += 1
+            if not isinstance(kw, str):
+                continue
+            nkw = norm(kw)
+            if nkw and nkw in query:
+                score += 2.0
+
+        # 2) если запрос из 1 слова — подсказка по title/section
+        if is_one_word:
+            w = q_words[0]
+            if w in title:
+                score += 1.2
+            if w in section:
+                score += 0.8
+
+        # 3) fuzzy: если точного совпадения нет, пробуем похожесть
+        if score == 0.0:
+            for kw in keywords:
+                if not isinstance(kw, str):
+                    continue
+                nkw = norm(kw)
+                if not nkw:
+                    continue
+
+                # сравнение "слово vs keyword" и "вся фраза vs keyword"
+                if any(similar(w, nkw) >= 0.82 for w in q_words):
+                    score += 1.0
+                elif similar(query, nkw) >= 0.82:
+                    score += 1.0
+
         if score > best_score:
             best_score = score
             best = entry
 
-    return best if best_score > 0 else None
+    return best if best_score >= 1.0 else None
+
 
 def norm(text: str) -> str:
     t = (text or "").lower()
