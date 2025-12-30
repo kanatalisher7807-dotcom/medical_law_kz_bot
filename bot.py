@@ -1,3 +1,5 @@
+import re
+from difflib import SequenceMatcher
 import os
 import json
 import logging
