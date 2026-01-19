@@ -462,21 +462,11 @@ async def handle_text(message: types.Message):
         )
         return
 
-    # 2) обычный режим: сравним FAQ и EXAM и выберем лучшее автоматически
+    # 2) обычный режим: ищем только по FAQ
     faq_entry, faq_score = best_match(FAQ, raw, keyword_field="keywords")
-    exam_entry, exam_score = best_match(EXAM, raw, keyword_field="keywords")
+    faq_ok = faq_entry is not None and faq_score >= 1.2  # порог повыше, чтобы "мусор" не ловить
 
-    # Порог, чтобы не стрелять в мусор
-    faq_ok = faq_entry is not None and faq_score >= 0.9
-    exam_ok = exam_entry is not None and exam_score >= 0.9
-
-    # Автовыбор: если EXAM явно лучше — отдаем EXAM, иначе FAQ
-    if faq_ok or exam_ok:
-        if exam_ok and (exam_score > faq_score + 0.5):
-            await message.answer(format_exam(exam_entry), reply_markup=menu)
-            return
-
-        # FAQ ответ + дефиниция сверху, если есть
+    if faq_ok:
         section = (faq_entry.get("section") or "").strip()
         definition = find_definition(section) if section else None
 
@@ -494,6 +484,7 @@ async def handle_text(message: types.Message):
 
         await message.answer(out, reply_markup=menu)
         return
+
 
     # 3) если базы не нашли — подключаем меня (AI-fallback), если ключ задан
     ai_text = await openai_answer(raw)
