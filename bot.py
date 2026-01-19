@@ -430,6 +430,18 @@ async def handle_section_buttons(message: types.Message):
 async def handle_text(message: types.Message):
     uid = message.from_user.id
     raw = (message.text or "").strip()
+    # 0) приветствия — не запускаем ни FAQ, ни EXAM, ни AI
+    greetings = {"привет", "прив", "hello", "hi", "здарова", "здрасьте", "ку", "салам", "салем", "здравствуйте"}
+    norm = raw.lower().strip(" .,!?:;")
+    if norm in greetings:
+        await message.answer(
+            "Привет! 🙂\n\n"
+            "Можешь:\n"
+            "• нажать кнопку нужного раздела ниже,\n"
+            "• или написать вопрос 1–2 словами (например: «жалоба», «хамство врача», «отказ в помощи»).",
+            reply_markup=menu
+        )
+        return
 
     # выход из экзамен-режима
     if USER_MODE.get(uid) == "exam" and raw.lower() in ("выход", "выйти", "exit"):
