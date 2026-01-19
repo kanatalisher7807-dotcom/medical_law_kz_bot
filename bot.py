@@ -311,6 +311,39 @@ async def openai_answer(user_text: str, timeout_s: int = 18) -> Optional[str]:
     except Exception as e:
         logging.warning(f"OpenAI fallback failed: {e}")
         return None
+async def ask_ai(user_text: str) -> str:
+    """Fallback-ответ через OpenAI, когда FAQ не нашёл."""
+    if not oa_client:
+        return (
+            "AI сейчас недоступен.\n"
+            "Попробуйте позже или нажмите «✉️ Задать вопрос преподавателю»."
+        )
+
+    def _call() -> str:
+        resp = oa_client.responses.create(
+            model="gpt-5-mini",
+            input=[
+                {"role": "system", "content": AI_SYSTEM_PROMPT},
+                {"role": "user", "content": user_text},
+            ],
+        )
+        return (getattr(resp, "output_text", "") or "").strip()
+
+    try:
+        text = await asyncio.to_thread(_call)
+        if not text:
+            return (
+                "Не удалось сформировать ответ.\n"
+                "Попробуйте написать проще (1–2 ключевых слова) "
+                "или нажмите «✉️ Задать вопрос преподавателю»."
+            )
+        return text
+    except Exception as e:
+        logging.exception("OpenAI error: %s", e)
+        return (
+            "AI временно недоступен.\n"
+            "Попробуйте позже или нажмите «✉️ Задать вопрос преподавателю»."
+        )
 
 # ---------- Aiogram ----------
 if not TOKEN:
