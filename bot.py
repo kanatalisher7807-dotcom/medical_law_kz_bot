@@ -498,6 +498,7 @@ async def handle_text(message: types.Message):
         reply_markup=menu,
     )
     return
+    
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
 
