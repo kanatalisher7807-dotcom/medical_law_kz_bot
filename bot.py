@@ -501,7 +501,7 @@ async def handle_text(message: types.Message):
         exam_entry, exam_score = best_match(EXAM, raw, keyword_field="keywords")
         if exam_entry and exam_score >= 1.0:
                         if uid not in PRO_USERS:
-                DEMO_EXAM_COUNTER[uid] = DEMO_EXAM_COUNTER.get(uid, 0) + 1
+                            DEMO_EXAM_COUNTER[uid] = DEMO_EXAM_COUNTER.get(uid, 0) + 1
         await message.answer(format_exam(exam_entry), reply_markup=menu)
             return
         await message.answer(
