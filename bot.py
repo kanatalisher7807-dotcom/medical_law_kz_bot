@@ -483,7 +483,7 @@ async def handle_text(message: types.Message):
                     reply_markup=menu,
                 )
                 return
-exam_entry, exam_score = best_match(EXAM, raw, keyword_field="keywords")
+        exam_entry, exam_score = best_match(EXAM, raw, keyword_field="keywords")
         if exam_entry and exam_score >= 1.0:
             await message.answer(format_exam(exam_entry), reply_markup=menu)
             return
