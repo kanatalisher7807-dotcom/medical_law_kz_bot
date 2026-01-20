@@ -487,7 +487,7 @@ async def handle_text(message: types.Message):
 
     # 1) если включен exam-режим — сначала EXAM
     if USER_MODE.get(uid) == "exam":
-                # ДЕМО-ограничение: если пользователь не PRO — даём только DEMO_EXAM_LIMIT карточек
+        # ДЕМО-ограничение: если пользователь не PRO — даём только DEMO_EXAM_LIMIT карточек
         if uid not in PRO_USERS:
             used = DEMO_EXAM_COUNTER.get(uid, 0)
             if used >= DEMO_EXAM_LIMIT:
@@ -498,18 +498,22 @@ async def handle_text(message: types.Message):
                     reply_markup=menu,
                 )
                 return
+
         exam_entry, exam_score = best_match(EXAM, raw, keyword_field="keywords")
         if exam_entry and exam_score >= 1.0:
-                        if uid not in PRO_USERS:
-                            DEMO_EXAM_COUNTER[uid] = DEMO_EXAM_COUNTER.get(uid, 0) + 1
-        await message.answer(format_exam(exam_entry), reply_markup=menu)
+            if uid not in PRO_USERS:
+                DEMO_EXAM_COUNTER[uid] = DEMO_EXAM_COUNTER.get(uid, 0) + 1
+
+            await message.answer(format_exam(exam_entry), reply_markup=menu)
             return
+
         await message.answer(
             "По этому запросу экзаменационная карточка не найдена.\n"
             "Попробуйте проще: «ответственность», «дисциплинарная», «уголовная».",
             reply_markup=menu,
         )
         return
+
 
     # 2) обычный режим: ищем только по FAQ
     faq_entry, faq_score = best_match(FAQ, raw, keyword_field="keywords")
