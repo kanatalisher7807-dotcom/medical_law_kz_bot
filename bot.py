@@ -472,7 +472,18 @@ async def handle_text(message: types.Message):
 
     # 1) если включен exam-режим — сначала EXAM
     if USER_MODE.get(uid) == "exam":
-        exam_entry, exam_score = best_match(EXAM, raw, keyword_field="keywords")
+                # ДЕМО-ограничение: если пользователь не PRO — даём только DEMO_EXAM_LIMIT карточек
+        if uid not in PRO_USERS:
+            used = DEMO_EXAM_COUNTER.get(uid, 0)
+            if used >= DEMO_EXAM_LIMIT:
+                await message.answer(
+                    "🔒 Экзаменационный режим (демо)\n\n"
+                    "Доступный лимит карточек в демо исчерпан.\n"
+                    "Чтобы подключить полный доступ, напишите: «Хочу PRO-доступ».",
+                    reply_markup=menu,
+                )
+                return
+exam_entry, exam_score = best_match(EXAM, raw, keyword_field="keywords")
         if exam_entry and exam_score >= 1.0:
             await message.answer(format_exam(exam_entry), reply_markup=menu)
             return
