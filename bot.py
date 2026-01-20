@@ -93,6 +93,14 @@ menu.add(KeyboardButton(SECTIONS[7]), KeyboardButton(SECTIONS[8]))
 
 # ---------- Modes ----------
 USER_MODE: Dict[int, str] = {}  # "exam" or ""
+# --- PRO доступ для студентов (v1) ---
+PRO_USERS = {
+    # сюда добавляй Telegram ID студентов с PRO-доступом
+    # пример: 123456789,
+}
+
+DEMO_EXAM_LIMIT = 5  # сколько экзамен-карточек доступно в демо
+DEMO_EXAM_COUNTER: Dict[int, int] = {}  # сколько карточек уже выдано каждому
 
 # ---------- Paths ----------
 def resolve_path(env_var: str, filename: str) -> str:
