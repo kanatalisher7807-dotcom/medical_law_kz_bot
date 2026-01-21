@@ -513,13 +513,36 @@ async def handle_text(message: types.Message):
             reply_markup=menu,
         )
         return
+    uid = message.from_user.id
+    raw = (message.text or "").strip()
 
+    # 0) выход из exam-режима
+    if USER_MODE.get(uid) == "exam" and raw.lower() in ("выход", "выйти", "exit"):
+        USER_MODE.pop(uid, None)
+        await message.answer("Экзаменационный режим выключён. Можете задавать обычные вопросы.", reply_markup=menu)
+        return
 
-    # 2) обычный режим: ищем только по FAQ
+    # 1) Если включен exam-режим — отвечаем ТОЛЬКО из EXAM
+    if USER_MODE.get(uid) == "exam":
+        exam_entry, exam_score = best_match(EXAM, raw, keyword_field="keywords")
+
+        # порог можно держать высоким, чтобы не стрелять в мусор
+        if exam_entry and exam_score >= 1.0:
+            await message.answer(format_exam(exam_entry), reply_markup=menu)
+            return
+
+        await message.answer(
+            "По этому запросу экзаменационная карточка не найдена.\n"
+            "Попробуйте проще: «ответственность», «дисциплинарная», «уголовная».",
+            reply_markup=menu,
+        )
+        return
+
+    # 2) Обычный режим — ТОЛЬКО FAQ (EXAM тут вообще не участвует)
     faq_entry, faq_score = best_match(FAQ, raw, keyword_field="keywords")
-    faq_ok = faq_entry is not None and faq_score >= 1.2  # порог повыше, чтобы "мусор" не ловить
 
-    if faq_ok:
+    # Порог для FAQ: можно чуть ниже, чтобы ловил короткие/кривые слова
+    if faq_entry and faq_score >= 0.8:
         section = (faq_entry.get("section") or "").strip()
         definition = find_definition(section) if section else None
 
@@ -538,7 +561,22 @@ async def handle_text(message: types.Message):
         await message.answer(out, reply_markup=menu)
         return
 
+    # 3) Если FAQ не нашёл — AI fallback (если ключ есть)
+    ai_text = await openai_answer(raw)
+    if ai_text:
+        out = ai_text.strip() + f"\n\n{DISCLAIMER}"
+        await message.answer(out, reply_markup=menu)
+        return
 
+    # 4) Совсем ничего
+    await message.answer(
+        "Не нашёл точного ответа в базе знаний.\n"
+        "Попробуйте переформулировать вопрос проще (1–2 ключевых слова) "
+        "или нажмите «✉️ Задать вопрос преподавателю».",
+        reply_markup=menu,
+    )
+    return
+ 
     # 3) если базы не нашли — подключаем меня (AI-fallback), если ключ задан
     ai_text = await openai_answer(raw)
     if ai_text:
